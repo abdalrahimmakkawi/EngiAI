@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import katex from 'katex';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
-import { FileIcon, FileText, FileCode } from 'lucide-react';
+import { FileIcon, FileText, FileCode, ThumbsUp, ThumbsDown } from 'lucide-react';
 
 interface MessageBubbleProps {
   role: 'user' | 'assistant';
@@ -13,10 +13,37 @@ interface MessageBubbleProps {
     type: string;
     preview?: string;
   }[];
+  topicTags?: string[];
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, isStreaming, attachments }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({ 
+  role, 
+  content, 
+  isStreaming = false,
+  attachments = [],
+  topicTags = []
+}) => {
   const isAI = role === 'assistant';
+
+  const [feedbackGiven, setFeedbackGiven] = useState<'helpful' | 'unhelpful' | null>(null);
+  const [showThanks, setShowThanks] = useState(false);
+
+  const handleFeedback = async (wasHelpful: boolean) => {
+    if (feedbackGiven || !topicTags.length) return;
+    
+    setFeedbackGiven(wasHelpful ? 'helpful' : 'unhelpful');
+    setShowThanks(true);
+    
+    // Update topic scores
+    // await updateTopicScore(
+    //   'user-id-placeholder', // This should come from user context
+    //   topicTags,
+    //   wasHelpful
+    // );
+    
+    // Hide thanks message after 2 seconds
+    setTimeout(() => setShowThanks(false), 2000);
+  };
 
   const getFileIcon = (type: string, name: string) => {
     if (type === 'application/pdf') return <FileIcon className="text-red-500" size={14} />;
@@ -126,11 +153,40 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, isS
           )}
         </div>
         
-        {isAI && content.length > 100 && !isStreaming && (
+        {isAI && !isStreaming && (
           <div className="border-t border-white/5 pt-3 mt-3">
-            <p className="text-[11px] text-[#64748b] leading-snug">
-              <span className="text-[#00d4ff] font-bold">Verification:</span> Accuracy of results should be checked against textbook standard constants.
-            </p>
+            {content.length > 100 && (
+              <p className="text-[11px] text-[#64748b] leading-snug mb-2">
+                <span className="text-[#00d4ff] font-bold">Verification:</span> Accuracy of results should be checked against textbook standard constants.
+              </p>
+            )}
+            
+            {/* Feedback buttons */}
+            {!feedbackGiven && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-[#64748b] mr-2">Was this helpful?</span>
+                <button
+                  onClick={() => handleFeedback(true)}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#64748b] hover:text-green-400 hover:bg-green-500/10 transition-colors"
+                >
+                  <ThumbsUp size={12} />
+                  Yes
+                </button>
+                <button
+                  onClick={() => handleFeedback(false)}
+                  className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#64748b] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <ThumbsDown size={12} />
+                  No
+                </button>
+              </div>
+            )}
+            
+            {showThanks && (
+              <p className="text-[10px] text-[#00d4ff] animate-pulse">
+                Thanks for the feedback!
+              </p>
+            )}
           </div>
         )}
       </div>

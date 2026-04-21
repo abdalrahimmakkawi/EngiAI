@@ -2,15 +2,42 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { ChatWindow } from './components/ChatWindow';
 import { InputBar } from './components/InputBar';
+import { AuthScreen } from './components/AuthScreen';
+import { LoadingScreen } from './components/LoadingScreen';
 import { Message, streamChat } from './lib/nvidia';
 import { Attachment } from './lib/fileProcessor';
-import { supabase } from './lib/supabase';
+import { supabase, SupabaseUser } from './lib/supabase';
+import { saveMessage, getMemorySummary, getStruggleTopics, summarizeIfNeeded } from './lib/memory';
+import { extractTopics } from './lib/topicExtractor';
 
 const App: React.FC = () => {
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
+
+  // Auth state management
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (authLoading) return <LoadingScreen />;
+  if (!user) return <AuthScreen />;
 
   // Initialize Supabase session
   useEffect(() => {
@@ -19,7 +46,7 @@ const App: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from('sessions')
-          .insert({})
+          .insert({ user_id: user.id })
           .select()
           .single();
 
@@ -31,30 +58,23 @@ const App: React.FC = () => {
     };
 
     initSession();
-  }, []);
+  }, [user]);
 
-  const saveMessageToSupabase = async (role: 'user' | 'assistant', content: string, hasAttachments: boolean = false) => {
-    if (!supabase || !sessionId) return;
-    try {
-      await supabase.from('messages').insert({
-        session_id: sessionId,
-        role,
-        content,
-        has_attachments: hasAttachments
-      });
-
-      // Update session last_active and message_count
-      await supabase.rpc('increment_session_messages', { session_id_param: sessionId });
-    } catch (err) {
-      console.warn('Failed to save message to Supabase:', err);
-    }
-  };
-
+  
   const handleSendMessage = async (content: string) => {
     if (isStreaming) return;
 
-    // Allow send if there's text OR attachments
     if (!content.trim() && attachments.length === 0) return;
+    if (isStreaming || !supabase || !user) return;
+
+    // Extract topics from message
+    const topics = extractTopics(content);
+
+    // Get memory context for this user
+    const [summary, struggleTopics] = await Promise.all([
+      getMemorySummary(user.id),
+      getStruggleTopics(user.id),
+    ]);
 
     // If no text but has attachments, use a smart default
     const messageText = content.trim() || 
@@ -66,8 +86,12 @@ const App: React.FC = () => {
       role: 'user', 
       content: messageText,
       attachments: attachments.map(a => ({
+        id: a.id,
         name: a.name,
         type: a.type,
+        size: a.size,
+        base64: a.base64,
+        textContent: a.textContent,
         preview: a.preview
       }))
     };
@@ -76,24 +100,42 @@ const App: React.FC = () => {
     setIsStreaming(true);
 
     const hasAttachments = attachments.length > 0;
-    const currentAttachments = [...attachments];
     setAttachments([]); // Clear immediately for UI
 
-    // Background save user message
-    saveMessageToSupabase('user', messageText, hasAttachments);
+    // Save user message to Supabase
+    await saveMessage(
+      user.id,
+      sessionId!,
+      "user",
+      messageText,
+      topics,
+      hasAttachments
+    );
 
     try {
       const assistantMessage: Message = { role: 'assistant', content: '' };
       setMessages([...newMessages, assistantMessage]);
 
       let accumulatedContent = '';
-      for await (const chunk of streamChat(newMessages, currentAttachments)) {
+      for await (const chunk of streamChat(
+        newMessages,
+        { summary, struggleTopics }
+      )) {
         accumulatedContent += chunk;
         setMessages([...newMessages, { role: 'assistant', content: accumulatedContent }]);
       }
       
-      // Save assistant response once complete
-      saveMessageToSupabase('assistant', accumulatedContent);
+      // Save assistant response
+      await saveMessage(
+        user.id,
+        sessionId!,
+        "assistant",
+        accumulatedContent,
+        topics
+      );
+
+      // Summarize if needed (non-blocking)
+      summarizeIfNeeded(user.id).catch(console.warn);
     } catch (error) {
       console.error('Error in chat:', error);
       setMessages(prev => [
@@ -107,7 +149,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0f] text-[#e2e8f0] grid-bg overflow-hidden">
-      <Header />
+      <Header user={user} />
       
       <main className="flex-1 flex overflow-hidden p-4 md:p-6 gap-6">
         {/* Sidebar - Desktop Only */}

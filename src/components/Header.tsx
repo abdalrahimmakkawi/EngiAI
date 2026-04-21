@@ -1,6 +1,20 @@
 import React from 'react';
+import { supabase } from '../lib/supabase';
+import { LogOut } from 'lucide-react';
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  user?: {
+    id: string;
+    email?: string;
+    full_name?: string;
+  } | null;
+}
+
+export const Header: React.FC<HeaderProps> = ({ user }) => {
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
   return (
     <header className="h-16 flex items-center justify-between px-8 bg-[#0a0a0f] border-b border-white/5 z-50 shrink-0 sticky top-0">
       <div className="flex items-center gap-3">
@@ -24,9 +38,27 @@ export const Header: React.FC = () => {
             Powered by NVIDIA NIM
           </span>
         </div>
-        <div className="w-10 h-10 rounded-full bg-[#1a1a2e] border border-white/10 flex items-center justify-center text-xs font-medium text-[#64748b] cursor-pointer hover:border-accent/40 transition-colors">
-          JD
-        </div>
+        
+        {user ? (
+          <div className="flex items-center gap-3">
+            <div className="hidden md:flex flex-col items-end text-right mr-4">
+              <p className="text-xs text-[#64748b] font-medium">
+                {user.email}
+              </p>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a1a2e] border border-white/10 text-[#64748b] hover:text-white hover:border-accent/40 transition-colors text-sm"
+            >
+              <LogOut size={16} />
+              <span className="hidden sm:inline">Sign Out</span>
+            </button>
+          </div>
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-[#1a1a2e] border border-white/10 flex items-center justify-center text-xs font-medium text-[#64748b] cursor-pointer hover:border-accent/40 transition-colors">
+            JD
+          </div>
+        )}
       </div>
     </header>
   );

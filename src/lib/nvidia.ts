@@ -3,11 +3,7 @@ import { Attachment } from './fileProcessor';
 export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
-  attachments?: {
-    name: string;
-    type: string;
-    preview?: string;
-  }[];
+  attachments?: Attachment[];
 }
 
 const buildContent = (text: string, attachments: Attachment[]) => {
@@ -47,14 +43,46 @@ const buildContent = (text: string, attachments: Attachment[]) => {
   return content;
 };
 
-export async function* streamChat(messages: Message[], attachments: Attachment[] = []) {
-  const SYSTEM_PROMPT = `You are EngiAI, an expert engineering assistant for university students. You cover ALL engineering fields: mechanical, electrical, civil, chemical, aerospace, avionics, software, and more. When solving problems: 1) Identify the concept and relevant formulas. 2) Show every step clearly with proper notation. 3) Define all variables used. 4) Give the final answer with units. 5) Add a brief conceptual explanation at the end. Always render math using LaTeX notation wrapped in $...$ for inline and $$...$$ for block equations. Be precise, educational, and thorough.`;
+const buildSystemPrompt = (memory?: { 
+  summary?: string; 
+  struggleTopics?: string[] 
+}) => `
+You are EngiAI, an expert engineering assistant for university students.
+You cover ALL engineering fields: mechanical, electrical, civil, chemical,
+aerospace, avionics, software, and more.
+
+${memory?.summary ? `## Student Learning History:
+${memory.summary}
+Use this to give personalized, context-aware answers.
+Reference previous problems when relevant.` : ""}
+
+${memory?.struggleTopics?.length ? `## Topics This Student Struggles With:
+${memory.struggleTopics.join(", ")}
+Give extra detail, more examples, and clearer explanations on these topics.` : ""}
+
+When solving problems:
+1) Identify the concept and relevant formulas.
+2) Show every step clearly with proper notation.
+3) Define all variables used.
+4) Give the final answer with units.
+5) Add a brief conceptual explanation at the end.
+Always render math using LaTeX wrapped in $...$ inline and $$...$$ block.
+Be precise, educational, and thorough.
+`;
+
+export async function* streamChat(
+  messages: Message[],
+  memoryContext?: {
+    summary?: string;
+    struggleTopics?: string[];
+  }
+): AsyncGenerator<string> {
 
   // Only the last message gets the attachments in this implementation
   // Using meta/llama-3.2-11b-vision-instruct as it is a widely supported vision NIM
   const processedMessages = messages.map((m, i) => {
     if (i === messages.length - 1 && m.role === 'user') {
-      return { ...m, content: buildContent(m.content, attachments) };
+      return { ...m, content: buildContent(m.content, m.attachments || []) };
     }
     return m;
   });
@@ -69,7 +97,7 @@ export async function* streamChat(messages: Message[], attachments: Attachment[]
     body: JSON.stringify({
       model, 
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: buildSystemPrompt(memoryContext) },
         ...processedMessages
       ],
       temperature: 0.2,

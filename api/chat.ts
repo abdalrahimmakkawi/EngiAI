@@ -1,9 +1,43 @@
 import { VercelRequest, VercelResponse } from "@vercel/node";
 
+const requestCounts = new Map<string, { count: number; resetTime: number }>();
+const RATE_LIMIT = 20; // requests per window
+const RATE_WINDOW = 60 * 1000; // 1 minute
+
+const checkRateLimit = (ip: string): boolean => {
+  const now = Date.now();
+  const record = requestCounts.get(ip);
+
+  if (!record || now > record.resetTime) {
+    requestCounts.set(ip, { count: 1, resetTime: now + RATE_WINDOW });
+    return true;
+  }
+
+  if (record.count >= RATE_LIMIT) return false;
+  record.count++;
+  return true;
+};
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    return res.status(200).end();
+  }
+
   // Only allow POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // Rate limiting
+  const ip = req.headers["x-forwarded-for"] as string || "unknown";
+  if (!checkRateLimit(ip)) {
+    return res.status(429).json({ 
+      error: "Too many requests. Please wait a moment." 
+    });
   }
 
   const apiKey = process.env.NVIDIA_API_KEY;
