@@ -63,7 +63,9 @@ export async function* streamChat(messages: Message[], attachments: Attachment[]
   const apiKey = import.meta.env.VITE_NVIDIA_API_KEY;
 
   if (!apiKey) {
-    throw new Error('NVIDIA API key not configured. Please set VITE_NVIDIA_API_KEY in your environment variables.');
+    console.warn("NVIDIA API key not set. Add VITE_NVIDIA_API_KEY to your environment.");
+    yield "The NVIDIA API key is not configured. Please contact the administrator to set up the VITE_NVIDIA_API_KEY environment variable.";
+    return;
   }
 
   const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
