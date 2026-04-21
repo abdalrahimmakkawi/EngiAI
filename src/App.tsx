@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { Header } from './components/Header';
 import { ChatWindow } from './components/ChatWindow';
 import { InputBar } from './components/InputBar';
@@ -107,6 +108,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0f] text-[#e2e8f0] grid-bg overflow-hidden">
+      <Analytics />
       <Header />
       
       <main className="flex-1 flex overflow-hidden p-4 md:p-6 gap-6">
