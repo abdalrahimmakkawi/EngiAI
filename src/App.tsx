@@ -61,7 +61,7 @@ const App: React.FC = () => {
   }, [user?.id]);
 
   
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string) => { // Fixed user.id handling
     if (isStreaming) return;
 
     if (!content.trim() && attachments.length === 0) return;
