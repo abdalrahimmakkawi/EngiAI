@@ -1,0 +1,6 @@
+{
+  "name": "EngiAI",
+  "description": "AI-powered engineering assistant for university students with KaTeX math rendering and NVIDIA NIM integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["AI Chat", "Math Synthesis", "Technical Problem Solving"]
+}
