@@ -1,5 +1,4 @@
 import React from 'react';
-import { supabase } from '../lib/supabase';
 import { LogOut } from 'lucide-react';
 
 interface HeaderProps {
@@ -8,12 +7,10 @@ interface HeaderProps {
     email?: string;
     full_name?: string;
   } | null;
+  onSignOut?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ user }) => {
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-  };
+export const Header: React.FC<HeaderProps> = ({ user, onSignOut }) => {
 
   return (
     <header className="h-16 flex items-center justify-between px-8 bg-[#0a0a0f] border-b border-white/5 z-50 shrink-0 sticky top-0">
@@ -47,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({ user }) => {
               </p>
             </div>
             <button
-              onClick={handleSignOut}
+              onClick={onSignOut}
               className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1a1a2e] border border-white/10 text-[#64748b] hover:text-white hover:border-accent/40 transition-colors text-sm"
             >
               <LogOut size={16} />
