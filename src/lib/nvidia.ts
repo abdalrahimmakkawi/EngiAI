@@ -60,19 +60,11 @@ export async function* streamChat(messages: Message[], attachments: Attachment[]
   });
 
   const model = 'meta/llama-3.2-11b-vision-instruct';
-  const apiKey = import.meta.env.VITE_NVIDIA_API_KEY;
 
-  if (!apiKey) {
-    console.warn("NVIDIA API key not set. Add VITE_NVIDIA_API_KEY to your environment.");
-    yield "The NVIDIA API key is not configured. Please contact the administrator to set up the VITE_NVIDIA_API_KEY environment variable.";
-    return;
-  }
-
-  const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+  const response = await fetch('/api/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model, 
