@@ -42,7 +42,7 @@ const App: React.FC = () => {
   // Initialize Supabase session
   useEffect(() => {
     const initSession = async () => {
-      if (!supabase) return;
+      if (!supabase || !user?.id) return;
       try {
         const { data, error } = await supabase
           .from('sessions')
@@ -58,14 +58,14 @@ const App: React.FC = () => {
     };
 
     initSession();
-  }, [user]);
+  }, [user?.id]);
 
   
   const handleSendMessage = async (content: string) => {
     if (isStreaming) return;
 
     if (!content.trim() && attachments.length === 0) return;
-    if (isStreaming || !supabase || !user) return;
+    if (isStreaming || !supabase || !user?.id) return;
 
     // Extract topics from message
     const topics = extractTopics(content);
@@ -104,7 +104,7 @@ const App: React.FC = () => {
 
     // Save user message to Supabase
     await saveMessage(
-      user.id,
+      user.id!,
       sessionId!,
       "user",
       messageText,
@@ -127,7 +127,7 @@ const App: React.FC = () => {
       
       // Save assistant response
       await saveMessage(
-        user.id,
+        user.id!,
         sessionId!,
         "assistant",
         accumulatedContent,
@@ -135,7 +135,7 @@ const App: React.FC = () => {
       );
 
       // Summarize if needed (non-blocking)
-      summarizeIfNeeded(user.id).catch(console.warn);
+      summarizeIfNeeded(user.id!).catch(console.warn);
     } catch (error) {
       console.error('Error in chat:', error);
       setMessages(prev => [
