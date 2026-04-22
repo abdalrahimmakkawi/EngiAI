@@ -26,6 +26,7 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
+  
   if (authLoading) return <LoadingScreen />;
   if (!user) return <AuthScreen />;
   return <MainApp user={user} />;

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { ChatWindow } from './ChatWindow';
 import { InputBar } from './InputBar';
-import { FormulaOfTheDay } from './FormulaOfTheDay';
+import { RecentTopics } from './RecentTopics';
 import { Message, streamChat } from '../lib/nvidia';
 import { Attachment } from '../lib/fileProcessor';
 import { supabase, SupabaseUser } from '../lib/supabase';
@@ -157,7 +157,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
             </div>
           </div>
 
-          <FormulaOfTheDay />
+          <RecentTopics />
         </aside>
 
         {/* Chat Section */}
