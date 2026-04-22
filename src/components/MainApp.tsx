@@ -2,12 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { ChatWindow } from './ChatWindow';
 import { InputBar } from './InputBar';
-import { RecentTopics } from './RecentTopics';
+import Sidebar from './Sidebar';
 import { Message, streamChat } from '../lib/nvidia';
 import { Attachment } from '../lib/fileProcessor';
 import { supabase, SupabaseUser } from '../lib/supabase';
 import { saveMessage, getMemorySummary, getStruggleTopics, summarizeIfNeeded } from '../lib/memory';
 import { extractTopics } from '../lib/topicExtractor';
+
+interface Session {
+  id: string;
+  topic: string;
+  last_active: string;
+  message_count: number;
+  created_at: string;
+}
 
 interface MainAppProps {
   user: SupabaseUser;
@@ -17,31 +25,87 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [sessionId, setSessionId] = useState<string>('');
+  const [currentSessionId, setCurrentSessionId] = useState<string>('');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sessions, setSessions] = useState<Session[]>([]);
 
-  // Initialize Supabase session
+  // Load all sessions for this user on mount
+  const loadSessions = async () => {
+    if (!supabase || !user?.id) return;
+    const { data } = await supabase
+      .from("sessions")
+      .select("id, topic, last_active, message_count, created_at")
+      .eq("user_id", user.id)
+      .order("last_active", { ascending: false });
+    if (data) setSessions(data);
+  };
+
   useEffect(() => {
-    const initSession = async () => {
-      if (!supabase || !user?.id) return;
-      try {
-        const { data, error } = await supabase
-          .from('sessions')
-          .insert({ user_id: user.id })
-          .select()
-          .single();
-
-        if (error) throw error;
-        if (data) setSessionId(data.id);
-      } catch (err) {
-        console.warn('Supabase initialization failed (Graceful degradation active):', err);
-      }
-    };
-
-    initSession();
+    loadSessions();
   }, [user?.id]);
+
+  // Create new session if none exists
+  useEffect(() => {
+    if (sessions.length === 0 && user?.id) {
+      handleNewChat();
+    }
+  }, [sessions.length, user?.id]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleNewChat = async () => {
+    if (!supabase || !user?.id) return;
+    // Create new session in Supabase
+    const { data } = await supabase
+      .from("sessions")
+      .insert({ 
+        user_id: user.id, 
+        topic: "New Engineering Chat" 
+      })
+      .select("id")
+      .single();
+    
+    if (data) {
+      setCurrentSessionId(data.id);
+      setMessages([]); // Clear messages
+      await loadSessions(); // Refresh sidebar list
+    }
+  };
+
+  const handleSelectSession = async (sessionId: string) => {
+    if (!supabase) return;
+    setCurrentSessionId(sessionId);
+    
+    // Load messages for this session
+    const { data } = await supabase
+      .from("messages")
+      .select("role, content")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true });
+    
+    if (data) {
+      setMessages(data.map(m => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })));
+    }
+  };
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!supabase) return;
+    await supabase
+      .from("sessions")
+      .delete()
+      .eq("id", sessionId);
+    
+    // If deleted current session, start new one
+    if (sessionId === currentSessionId) {
+      await handleNewChat();
+    } else {
+      await loadSessions();
+    }
   };
 
   const handleSendMessage = async (content: string) => {
@@ -88,7 +152,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
     // Save user message to Supabase
     await saveMessage(
       user.id!,
-      sessionId!,
+      currentSessionId!,
       "user",
       messageText,
       topics,
@@ -111,11 +175,21 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
       // Save assistant response
       await saveMessage(
         user.id!,
-        sessionId!,
+        currentSessionId!,
         "assistant",
         accumulatedContent,
         topics
       );
+
+      // Auto-update session topic after first message
+      if (messages.length === 0) {
+        const topic = content.slice(0, 50) + (content.length > 50 ? "..." : "");
+        await supabase
+          .from("sessions")
+          .update({ topic })
+          .eq("id", currentSessionId);
+        await loadSessions(); // Refresh sidebar
+      }
 
       // Summarize if needed (non-blocking)
       summarizeIfNeeded(user.id!).catch(console.warn);
@@ -127,55 +201,56 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
       ]);
     } finally {
       setIsStreaming(false);
+      await loadSessions(); // Refresh sidebar after every send
     }
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#0a0a0f] text-[#e2e8f0] grid-bg overflow-hidden">
-      <Header user={user} onSignOut={handleSignOut} />
-      
-      <main className="flex-1 flex overflow-hidden p-4 md:p-6 gap-6">
-        {/* Sidebar - Desktop Only */}
-        <aside className="hidden lg:flex w-72 flex-col gap-4 shrink-0">
-          <div className="eng-card rounded-2xl p-5 flex flex-col shadow-2xl">
-            <h2 className="text-[11px] font-bold uppercase text-[#64748b] mb-4 tracking-[0.2em]">
-              Recent Topics
-            </h2>
-            <div className="space-y-3 flex-1 overflow-y-auto pr-1">
-              <div className="p-3 rounded-xl bg-[#1a1a2e]/50 border border-[#00d4ff]/10 cursor-pointer hover:border-accent/40 transition-all group">
-                <p className="text-xs font-semibold truncate group-hover:text-accent transition-colors">Bernoulli Equation Derivation</p>
-                <p className="text-[10px] text-[#64748b] mt-1 font-medium italic">Fluid Mechanics &bull; 2m ago</p>
-              </div>
-              <div className="p-3 rounded-xl hover:bg-white/5 border border-transparent transition-all cursor-pointer group">
-                <p className="text-xs font-semibold truncate text-[#64748b] group-hover:text-slate-300">3-Phase Power Analysis</p>
-                <p className="text-[10px] text-[#64748b] mt-1 font-medium italic">Electrical Eng &bull; 1h ago</p>
-              </div>
-              <div className="p-3 rounded-xl hover:bg-white/5 border border-transparent transition-all cursor-pointer group">
-                <p className="text-xs font-semibold truncate text-[#64748b] group-hover:text-slate-300">Euler-Bernoulli Beam Theory</p>
-                <p className="text-[10px] text-[#64748b] mt-1 font-medium italic">Civil Eng &bull; 4h ago</p>
-              </div>
-            </div>
-          </div>
+    <div className="flex h-screen overflow-hidden bg-[#0a0a0f]">
+      {/* Sidebar */}
+      <Sidebar
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onNewChat={handleNewChat}
+        onSelectSession={handleSelectSession}
+        onDeleteSession={handleDeleteSession}
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(prev => !prev)}
+        user={user}
+        onSignOut={handleSignOut}
+      />
 
-          <RecentTopics />
-        </aside>
+      {/* Main content */}
+      <div className={`flex flex-col flex-1 transition-all duration-300 overflow-hidden ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
+        <Header
+          onToggle={() => setSidebarOpen(prev => !prev)}
+          sidebarOpen={sidebarOpen}
+        />
+        <main className="flex-1 flex overflow-hidden p-4 md:p-6">
+          <section className="flex-1 flex flex-col eng-card rounded-[2rem] overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.5)] border-white/5">
+            <ChatWindow 
+              messages={messages} 
+              isStreaming={isStreaming} 
+              onSelectPrompt={handleSendMessage} 
+            />
+            
+            <InputBar 
+              onSendMessage={handleSendMessage} 
+              disabled={isStreaming} 
+              attachments={attachments}
+              setAttachments={setAttachments}
+            />
+          </section>
+        </main>
+      </div>
 
-        {/* Chat Section */}
-        <section className="flex-1 flex flex-col eng-card rounded-[2rem] overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.5)] border-white/5">
-          <ChatWindow 
-            messages={messages} 
-            isStreaming={isStreaming} 
-            onSelectPrompt={handleSendMessage} 
-          />
-          
-          <InputBar 
-            onSendMessage={handleSendMessage} 
-            disabled={isStreaming} 
-            attachments={attachments}
-            setAttachments={setAttachments}
-          />
-        </section>
-      </main>
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
     </div>
   );
 };

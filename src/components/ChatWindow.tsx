@@ -37,9 +37,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ messages, isStreaming, o
           <Cpu size={40} className="text-black" />
         </motion.div>
         
-        <h2 className="text-2xl font-bold mb-2 text-white">Ask me any engineering problem</h2>
+        <h2 className="text-2xl font-bold mb-2 text-white">What can I help you solve today?</h2>
         <p className="text-[#64748b] mb-8 max-w-sm font-medium">
-          From thermodynamics to software architecture, I am here to help you solve and understand complex problems.
+          Ask any engineering question
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl w-full px-4">
