@@ -88,7 +88,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
     // Save user message to Supabase
     await saveMessage(
       user.id!,
-      sessionId,
+      sessionId!,
       "user",
       messageText,
       topics,
@@ -111,7 +111,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
       // Save assistant response
       await saveMessage(
         user.id!,
-        sessionId,
+        sessionId!,
         "assistant",
         accumulatedContent,
         topics
