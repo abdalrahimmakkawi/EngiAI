@@ -50,9 +50,8 @@ export const getMemorySummary = async (userId: string): Promise<string> => {
       .select("summary")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-    return data?.summary ?? "";
+      .limit(1);
+    return data?.[0]?.summary ?? "";
   } catch {
     return "";
   }
