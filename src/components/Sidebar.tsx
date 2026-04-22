@@ -113,7 +113,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         {/* New Chat Button */}
         <div className="p-4">
           <button
-            onClick={onNewChat}
+            onClick={() => {
+              console.log('New Chat button clicked');
+              onNewChat();
+            }}
             className="w-full flex items-center gap-2 px-4 py-3 bg-transparent border border-cyan-500 text-cyan-500 rounded-lg hover:bg-cyan-500 hover:text-[#0d0d14] transition-all"
           >
             <Plus size={16} />

@@ -44,33 +44,49 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
     loadSessions();
   }, [user?.id]);
 
-  // Create new session if none exists
+  // Create new session if none exists and no current session
   useEffect(() => {
-    if (sessions.length === 0 && user?.id) {
+    if (sessions.length === 0 && user?.id && !currentSessionId) {
       handleNewChat();
     }
-  }, [sessions.length, user?.id]);
+  }, [sessions.length, user?.id, currentSessionId]);
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
   };
 
   const handleNewChat = async () => {
-    if (!supabase || !user?.id) return;
-    // Create new session in Supabase
-    const { data } = await supabase
-      .from("sessions")
-      .insert({ 
-        user_id: user.id, 
-        topic: "New Engineering Chat" 
-      })
-      .select("id")
-      .single();
+    console.log('handleNewChat called', { supabase: !!supabase, userId: user?.id });
+    if (!supabase || !user?.id) {
+      console.error('Missing supabase or user');
+      return;
+    }
     
-    if (data) {
-      setCurrentSessionId(data.id);
-      setMessages([]); // Clear messages
-      await loadSessions(); // Refresh sidebar list
+    try {
+      // Create new session in Supabase
+      const { data, error } = await supabase
+        .from("sessions")
+        .insert({ 
+          user_id: user.id, 
+          topic: "New Engineering Chat" 
+        })
+        .select("id")
+        .single();
+      
+      if (error) {
+        console.error('Error creating session:', error);
+        return;
+      }
+      
+      console.log('New session created:', data);
+      
+      if (data) {
+        setCurrentSessionId(data.id);
+        setMessages([]); // Clear messages
+        await loadSessions(); // Refresh sidebar list
+      }
+    } catch (err) {
+      console.error('Exception in handleNewChat:', err);
     }
   };
 
