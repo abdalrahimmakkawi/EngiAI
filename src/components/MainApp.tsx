@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Header } from './Header';
 import { ChatWindow } from './ChatWindow';
 import { InputBar } from './InputBar';
+import { FormulaOfTheDay } from './FormulaOfTheDay';
 import { Message, streamChat } from '../lib/nvidia';
 import { Attachment } from '../lib/fileProcessor';
 import { supabase, SupabaseUser } from '../lib/supabase';
@@ -136,7 +137,6 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
       <main className="flex-1 flex overflow-hidden p-4 md:p-6 gap-6">
         {/* Sidebar - Desktop Only */}
         <aside className="hidden lg:flex w-72 flex-col gap-4 shrink-0">
-          {/* ... existing sidebar ... */}
           <div className="eng-card rounded-2xl p-5 flex flex-col shadow-2xl">
             <h2 className="text-[11px] font-bold uppercase text-[#64748b] mb-4 tracking-[0.2em]">
               Recent Topics
@@ -157,17 +157,7 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
             </div>
           </div>
 
-          <div className="bg-[#00d4ff]/2 border border-[#00d4ff]/10 rounded-2xl p-5 shadow-inner">
-            <h3 className="text-[10px] font-bold text-[#00d4ff] mb-3 uppercase tracking-widest">
-              Formula of the Day
-            </h3>
-            <div className="math-font text-base text-center py-4 bg-black/20 rounded-xl border border-white/5 mb-2">
-              {"$$ \\nabla \\times \\mathbf{E} = -\\frac{\\partial \\mathbf{B}}{\\partial t} $$"}
-            </div>
-            <p className="text-[11px] text-center text-[#64748b] font-medium">
-              Faraday's Law of Induction
-            </p>
-          </div>
+          <FormulaOfTheDay />
         </aside>
 
         {/* Chat Section */}
