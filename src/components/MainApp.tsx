@@ -31,12 +31,14 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
 
   // Load all sessions for this user on mount
   const loadSessions = async () => {
-    if (!supabase || !user?.id) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("sessions")
       .select("id, topic, last_active, message_count, created_at")
-      .eq("user_id", user.id)
-      .order("last_active", { ascending: false });
+      .eq("user_id", user.id) // SECURITY: never load other users sessions
+      .order("last_active", { ascending: false })
+      .limit(50);
+  
+    console.log("Loaded sessions:", data?.length, "Error:", error);
     if (data) setSessions(data);
   };
 
@@ -52,54 +54,68 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
   }, [sessions.length, user?.id, currentSessionId]);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-  };
+  // Clear all local state before signing out
+  setMessages([]);
+  setSessions([]);
+  setCurrentSessionId("");
+  setAttachments([]);
+  // Then sign out
+  await supabase.auth.signOut();
+};
 
   const handleNewChat = async () => {
-    console.log('handleNewChat called', { supabase: !!supabase, userId: user?.id });
-    if (!supabase || !user?.id) {
-      console.error('Missing supabase or user');
-      return;
-    }
-    
-    try {
-      // Create new session in Supabase
-      const { data, error } = await supabase
-        .from("sessions")
-        .insert({ 
-          user_id: user.id, 
-          topic: "New Engineering Chat" 
-        })
-        .select("id")
-        .single();
-      
-      if (error) {
-        console.error('Error creating session:', error);
-        return;
-      }
-      
-      console.log('New session created:', data);
-      
-      if (data) {
-        setCurrentSessionId(data.id);
-        setMessages([]); // Clear messages
-        await loadSessions(); // Refresh sidebar list
-      }
-    } catch (err) {
-      console.error('Exception in handleNewChat:', err);
-    }
-  };
+  console.log("New chat clicked, user:", user.id);
+  
+  const { data, error } = await supabase
+    .from("sessions")
+    .insert({ 
+      user_id: user.id, 
+      topic: "New Engineering Chat",
+      message_count: 0,
+      last_active: new Date().toISOString()
+    })
+    .select("id")
+    .single();
+  
+  console.log("Session created:", data, "Error:", error);
+  
+  if (error) {
+    console.error("Failed to create session:", error.message);
+    return;
+  }
+  
+  if (data) {
+    console.log("Switching to session:", data.id);
+    setCurrentSessionId(data.id);
+    setMessages([]);
+    setSessions(prev => [{
+      id: data.id,
+      topic: "New Engineering Chat",
+      last_active: new Date().toISOString(),
+      message_count: 0,
+      created_at: new Date().toISOString(),
+    }, ...prev]);
+  }
+};
 
   const handleSelectSession = async (sessionId: string) => {
-    if (!supabase) return;
-    setCurrentSessionId(sessionId);
-    
-    // Load messages for this session
-    const { data } = await supabase
+  console.log("Selecting session:", sessionId);
+  
+  if (sessionId === currentSessionId) return;
+  
+  setCurrentSessionId(sessionId);
+  setMessages([]);
+  setIsStreaming(true);
+  
+  try {
+    const { data, error } = await supabase
       .from("messages")
-      .select("role, content")
+      .select("role, content, topic_tags, created_at")
       .eq("session_id", sessionId)
+      .eq("user_id", user.id) // SECURITY: always filter by user_id
       .order("created_at", { ascending: true });
+    
+    console.log("Loaded messages:", data?.length, "Error:", error);
     
     if (data) {
       setMessages(data.map(m => ({
@@ -107,7 +123,10 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
         content: m.content,
       })));
     }
-  };
+  } finally {
+    setIsStreaming(false);
+  }
+};
 
   const handleDeleteSession = async (sessionId: string) => {
     if (!supabase) return;
@@ -198,14 +217,36 @@ export const MainApp: React.FC<MainAppProps> = ({ user }) => {
       );
 
       // Auto-update session topic after first message
-      if (messages.length === 0) {
-        const topic = content.slice(0, 50) + (content.length > 50 ? "..." : "");
+      const isFirstMessage = messages.length === 0;
+
+      // After assistant response is fully saved:
+      if (isFirstMessage) {
+        const topic = messageText.slice(0, 60) + 
+          (messageText.length > 60 ? "..." : "");
+        
         await supabase
           .from("sessions")
-          .update({ topic })
-          .eq("id", currentSessionId);
-        await loadSessions(); // Refresh sidebar
+          .update({ 
+            topic,
+            last_active: new Date().toISOString()
+          })
+          .eq("id", currentSessionId)
+          .eq("user_id", user.id); // SECURITY
+      
+        // Update sidebar immediately without refetch
+        setSessions(prev => prev.map(s => 
+          s.id === currentSessionId 
+            ? { ...s, topic, last_active: new Date().toISOString() }
+            : s
+        ));
       }
+
+      // Always update last_active after every message
+      await supabase
+        .from("sessions")
+        .update({ last_active: new Date().toISOString() })
+        .eq("id", currentSessionId)
+        .eq("user_id", user.id);
 
       // Summarize if needed (non-blocking)
       summarizeIfNeeded(user.id!).catch(console.warn);
