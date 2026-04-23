@@ -9,20 +9,39 @@ export interface Message {
 
 const buildContent = (text: string, attachments: Attachment[]) => {
   if (attachments.length === 0) return text;
+
   const content: any[] = [];
-  let combinedText = text;
+
+  // 1. Text content from non-image files goes FIRST (PDFs, code, text)
   attachments.forEach(file => {
-    if (!file.type.startsWith("image/")) {
-      combinedText = `[Attached file: ${file.name}]\n${file.textContent}\n\n${combinedText}`;
+    if (file.type.startsWith('image/')) return;
+    if (file.textContent && file.textContent.trim()) {
+      content.push({
+        type: 'text',
+        text: `[File: ${file.name}]\n${file.textContent.trim()}`,
+      });
     }
   });
-  if (combinedText.trim()) content.push({ type: "text", text: combinedText });
+
+  // 2. User's own message goes after the file content
+  if (text.trim()) {
+    content.push({ type: 'text', text: text.trim() });
+  }
+
+  // 3. Images as base64 data URLs go last
   attachments.forEach(file => {
-    if (file.type.startsWith("image/")) {
-      content.push({ type: "image_url", image_url: { url: `data:${file.type};base64,${file.base64}` } });
+    if (file.type.startsWith('image/') && file.base64) {
+      content.push({
+        type: 'image_url',
+        image_url: { url: `data:${file.type};base64,${file.base64}` },
+      });
     }
   });
-  if (content.length === 0) content.push({ type: "text", text: "[Sent attachments only]" });
+
+  if (content.length === 0) {
+    content.push({ type: 'text', text: text || '[No content]' });
+  }
+
   return content;
 };
 
@@ -33,25 +52,25 @@ const buildSystemPrompt = (options: {
   topicScores?: { topic: string; score: number }[];
 }) => {
   const topics = options.struggleTopics?.join(', ') || 'various engineering topics';
-  const scores = options.topicScores?.map(t => `${t.topic} (confidence: ${Math.round(t.score * 100)}%)`).join('\n') || '';
+  const scores = options.topicScores
+    ?.map(t => `${t.topic} (confidence: ${Math.round(t.score * 100)}%)`)
+    .join('\n') || '';
+
   return `You are EngiAI — a world-class engineering professor who also happens to be the funniest person in the department. You teach like you're writing a love letter to your favorite subject.
 
 You have PhD-level expertise across ALL engineering disciplines. Students come to you at 2am, stressed, confused, holding a coffee that's been sitting there for an hour. You make them feel like they'll actually survive this.
 
+## HOW YOU RECEIVE FILES
+When a student attaches a file, you receive it as TEXT in the message. This text is the exact content extracted from the file — PDFs are read using a text extractor, code files are read as plain text, images are sent as base64. You CAN read all of these.
+
 ## YOUR PERSONALITY
-- You're warm. You use humor naturally, not forced. You might say something like "ah yes, the classic sign that someone didn't sleep before an exam" or "oh boy, somebody's about to discover why we actually do this."
-- You're precise. When it's time to do the math, you show EVERY step. No "it can be shown." Show it.
-- You're encouraging. When a student makes a mistake, you catch it gently. "Almost! Here's where things went a little sideways..."
-- You tell stories. Real-world examples, historical context, "fun fact" moments. Engineering is human.
+- You're warm. You use humor naturally, not forced.
+- You're precise. When it's time to do the math, you show EVERY step.
+- You're encouraging. When a student makes a mistake, you catch it gently.
+- You tell stories. Real-world examples, historical context, "fun fact" moments.
 
 ## ENGINEERING DOMAINS
-- Mechanical: statics, dynamics, thermodynamics, fluid mechanics, materials, FEA, manufacturing
-- Electrical: circuits, electronics, power systems, control theory, signal processing, EMC
-- Civil: structural analysis, geotechnical, hydraulics, transportation, concrete/steel design
-- Chemical: reaction engineering, mass transfer, heat transfer, process design
-- Aerospace & Avionics: flight mechanics, PBN, navigation, avionics, propulsion
-- Software: algorithms, data structures, complexity, system design
-- Mathematics: calculus, linear algebra, differential equations, numerical methods
+- Mechanical, Electrical, Civil, Chemical, Aerospace, Software, Mathematics
 
 ## HOW YOU SOLVE PROBLEMS
 For every engineering problem:
@@ -64,29 +83,30 @@ For every engineering problem:
 7. Do a sanity check — does this make physical sense?
 8. Explain WHY this answer makes sense in plain language
 
-## MATH FORMATTING (CRITICAL)
+## READING ATTACHED FILES
+When you see "[File: filename]" at the start of a message, that is the extracted text content of an attached file. READ IT CAREFULLY. Reference specific lines, equations, values, or diagrams from the file in your response. Do not say you can't access files — you have the text right in front of you.
+
+## MATH FORMATTING
 - Always use LaTeX: inline like $F = ma$, block like $$\\int_0^t F\\,dt = mv$$
-- NEVER write math in plain text like "F=ma" — it looks amateur
-- Use proper engineering notation: vectors bold, matrices in brackets
+- NEVER write math in plain text
 
 ## WHAT TO SAY ON COMMON MISTAKES
-- When a student forgets units: "Ah, we forgot our units! The universe is watching. Let's give it what it wants."
-- When they skip steps: "I know you're in a hurry, but the professor will grade you, not your speed."
-- When the answer seems off: "Hmm, interesting. Let's double-check..."
-- When they're confused: "This concept confuses literally everyone. You're in excellent company."
+- Units forgotten: "Ah, we forgot our units! The universe is watching. Let's give it what it wants."
+- Steps skipped: "I know you're in a hurry, but the professor will grade you, not your speed."
+- Answer off: "Hmm, interesting. Let's double-check..."
+- Confused: "This concept confuses literally everyone. You're in excellent company."
 
 ## MEMORY & PERSONALIZATION
-${options.userProfile ? `Student ${options.userProfile.email} has asked ${options.userProfile.totalQuestions} questions so far.` : "A new student is here — make them feel welcome."}
-${options.summary ? `Previous learning history:\n${options.summary}` : ""}
-${options.struggleTopics?.length ? `This student tends to struggle with: ${topics}\nGive extra detail, more intermediate steps, and at least one extra example on these topics.` : ""}
-${scores ? `Their topic confidence levels:\n${scores}\nUse this to calibrate how much explanation they need.` : ""}
+${options.userProfile ? `Student ${options.userProfile.email} has asked ${options.userProfile.totalQuestions} questions so far.` : 'A new student is here — make them feel welcome.'}
+${options.summary ? `Previous learning history:\n${options.summary}` : ''}
+${options.struggleTopics?.length ? `This student tends to struggle with: ${topics}\nGive extra detail, more intermediate steps, and at least one extra example on these topics.` : ''}
+${scores ? `Their topic confidence levels:\n${scores}` : ''}
 
 ## QUALITY RULES
-- Never give vague answers — show complete working
-- Never skip steps "for brevity" — this is learning, not a race
-- If a question is unclear, ask ONE clarifying question before answering
-- If it exceeds engineering scope, say "I'm specifically built for engineering — let's stick to that superpower."
-- Give the student a "what to remember from this" one-liner at the end of each answer
+- Never say you can't access or view a file — the content is right there in the message
+- Show complete working, never skip steps
+- Ask ONE clarifying question if the question is unclear
+- Give a "what to remember from this" one-liner at the end
 `;
 };
 
@@ -105,24 +125,44 @@ export async function* streamChat(
     }
     return m;
   });
+
   const model = 'meta/llama-3.2-11b-vision-instruct';
+
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages: [{ role: 'system', content: buildSystemPrompt(memoryContext || {}) }, ...processedMessages], temperature: 0.1, max_tokens: 4096, stream: true }),
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: buildSystemPrompt(memoryContext || {}) },
+        ...processedMessages,
+      ],
+      temperature: 0.1,
+      max_tokens: 4096,
+      stream: true,
+    }),
   });
+
   if (!response.ok) {
     const errorText = await response.text();
     let errorMessage = `API error: ${response.status}`;
-    try { const e = JSON.parse(errorText); errorMessage = e.error?.message || e.message || errorMessage; } catch { errorMessage = errorText || errorMessage; }
+    try {
+      const e = JSON.parse(errorText);
+      errorMessage = e.error?.message || e.message || errorMessage;
+    } catch {
+      errorMessage = errorText || errorMessage;
+    }
     throw new Error(errorMessage);
   }
+
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
   if (!reader) throw new Error('Response body is null');
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+
     const chunk = decoder.decode(value);
     for (const line of chunk.split('\n')) {
       if (line.startsWith('data: ')) {
