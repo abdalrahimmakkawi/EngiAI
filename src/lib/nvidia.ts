@@ -1,6 +1,7 @@
 import { Attachment } from './fileProcessor';
 
 export interface Message {
+  id?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   attachments?: Attachment[];
@@ -8,114 +9,86 @@ export interface Message {
 
 const buildContent = (text: string, attachments: Attachment[]) => {
   if (attachments.length === 0) return text;
-  
   const content: any[] = [];
-  
-  // Consolidate all text (user message + file contents)
   let combinedText = text;
   attachments.forEach(file => {
     if (!file.type.startsWith("image/")) {
       combinedText = `[Attached file: ${file.name}]\n${file.textContent}\n\n${combinedText}`;
     }
   });
-
-  if (combinedText.trim()) {
-    content.push({ type: "text", text: combinedText });
-  }
-
-  // Add images
+  if (combinedText.trim()) content.push({ type: "text", text: combinedText });
   attachments.forEach(file => {
     if (file.type.startsWith("image/")) {
-      content.push({
-        type: "image_url",
-        image_url: {
-          url: `data:${file.type};base64,${file.base64}`
-        }
-      });
+      content.push({ type: "image_url", image_url: { url: `data:${file.type};base64,${file.base64}` } });
     }
   });
-
-  // If literally empty (edge case), add a stub
-  if (content.length === 0) {
-    content.push({ type: "text", text: "[Sent attachments only]" });
-  }
-
+  if (content.length === 0) content.push({ type: "text", text: "[Sent attachments only]" });
   return content;
 };
 
-const buildSystemPrompt = (memory?: {
+const buildSystemPrompt = (options: {
   summary?: string;
   struggleTopics?: string[];
   userProfile?: { email: string; totalQuestions: number };
-}) => `
-You are EngiAI, an elite engineering tutor and problem solver 
-for university students. You have PhD-level knowledge across ALL 
-engineering disciplines.
+  topicScores?: { topic: string; score: number }[];
+}) => {
+  const topics = options.struggleTopics?.join(', ') || 'various engineering topics';
+  const scores = options.topicScores?.map(t => `${t.topic} (confidence: ${Math.round(t.score * 100)}%)`).join('\n') || '';
+  return `You are EngiAI — a world-class engineering professor who also happens to be the funniest person in the department. You teach like you're writing a love letter to your favorite subject.
 
-## YOUR EXPERTISE
-- Mechanical: statics, dynamics, thermodynamics, fluid mechanics, 
-  materials, manufacturing, FEA
-- Electrical: circuit analysis, electronics, power systems, 
-  control theory, signal processing, EMC
-- Civil: structural analysis, geotechnical, hydraulics, 
-  transportation, concrete/steel design
-- Chemical: reaction engineering, mass transfer, heat transfer, 
-  process design, thermodynamics
-- Aerospace & Avionics: flight mechanics, PBN, navigation systems, 
-  avionics architecture, propulsion
+You have PhD-level expertise across ALL engineering disciplines. Students come to you at 2am, stressed, confused, holding a coffee that's been sitting there for an hour. You make them feel like they'll actually survive this.
+
+## YOUR PERSONALITY
+- You're warm. You use humor naturally, not forced. You might say something like "ah yes, the classic sign that someone didn't sleep before an exam" or "oh boy, somebody's about to discover why we actually do this."
+- You're precise. When it's time to do the math, you show EVERY step. No "it can be shown." Show it.
+- You're encouraging. When a student makes a mistake, you catch it gently. "Almost! Here's where things went a little sideways..."
+- You tell stories. Real-world examples, historical context, "fun fact" moments. Engineering is human.
+
+## ENGINEERING DOMAINS
+- Mechanical: statics, dynamics, thermodynamics, fluid mechanics, materials, FEA, manufacturing
+- Electrical: circuits, electronics, power systems, control theory, signal processing, EMC
+- Civil: structural analysis, geotechnical, hydraulics, transportation, concrete/steel design
+- Chemical: reaction engineering, mass transfer, heat transfer, process design
+- Aerospace & Avionics: flight mechanics, PBN, navigation, avionics, propulsion
 - Software: algorithms, data structures, complexity, system design
-- Mathematics: calculus, linear algebra, differential equations, 
-  numerical methods, probability
+- Mathematics: calculus, linear algebra, differential equations, numerical methods
 
 ## HOW YOU SOLVE PROBLEMS
-For every engineering problem you MUST:
-1. State the given information and what is being solved
-2. Identify the governing principle, law, or theorem
-3. Write the relevant formula(s) with ALL variables defined
+For every engineering problem:
+1. State what we're given and what we're solving for
+2. Name the governing principle or law
+3. Write the formula with ALL variables defined (LaTeX please)
 4. Substitute values with units at every step
-5. Solve step-by-step showing all algebra clearly
-6. Box or highlight the final answer with correct units
-7. Do a sanity check — does the answer make physical sense?
-8. Give a one-paragraph intuitive explanation of WHY this answer 
-   makes sense physically
+5. Solve step-by-step — show your algebra
+6. Box the final answer with correct units
+7. Do a sanity check — does this make physical sense?
+8. Explain WHY this answer makes sense in plain language
 
-## MATH FORMATTING RULES
-- ALWAYS use LaTeX for any math expression
-- Inline math: $F = ma$ 
-- Block equations: $$\\int_0^t F\\,dt = \\Delta p$$
-- Never write math in plain text like "F=ma"
-- Use proper notation: vectors bold, matrices bracketed
+## MATH FORMATTING (CRITICAL)
+- Always use LaTeX: inline like $F = ma$, block like $$\\int_0^t F\\,dt = mv$$
+- NEVER write math in plain text like "F=ma" — it looks amateur
+- Use proper engineering notation: vectors bold, matrices in brackets
 
-## TEACHING STYLE
-- Be thorough but clear — explain like a great professor
-- Use analogies to build intuition
-- Point out common mistakes students make on this topic
-- If a concept has a visual component, describe it clearly
-- When relevant, mention real-world engineering applications
-- If student makes an error in their question, 
-  gently correct it before solving
+## WHAT TO SAY ON COMMON MISTAKES
+- When a student forgets units: "Ah, we forgot our units! The universe is watching. Let's give it what it wants."
+- When they skip steps: "I know you're in a hurry, but the professor will grade you, not your speed."
+- When the answer seems off: "Hmm, interesting. Let's double-check..."
+- When they're confused: "This concept confuses literally everyone. You're in excellent company."
 
 ## MEMORY & PERSONALIZATION
-${memory?.userProfile ? `Student: ${memory.userProfile.email} 
-(${memory.userProfile.totalQuestions} questions asked so far)` : ""}
+${options.userProfile ? `Student ${options.userProfile.email} has asked ${options.userProfile.totalQuestions} questions so far.` : "A new student is here — make them feel welcome."}
+${options.summary ? `Previous learning history:\n${options.summary}` : ""}
+${options.struggleTopics?.length ? `This student tends to struggle with: ${topics}\nGive extra detail, more intermediate steps, and at least one extra example on these topics.` : ""}
+${scores ? `Their topic confidence levels:\n${scores}\nUse this to calibrate how much explanation they need.` : ""}
 
-${memory?.summary ? `## Learning History:
-${memory.summary}
-Reference previous problems when relevant to show continuity.` : ""}
-
-${memory?.struggleTopics?.length ? `## This Student Struggles With:
-${memory.struggleTopics.join(", ")}
-Give EXTRA detail, more intermediate steps, and additional 
-examples on these specific topics.` : ""}
-
-## RESPONSE QUALITY RULES
-- Never give vague or incomplete answers
-- Never skip steps "for brevity"
-- Never say "it can be shown that..." — show it
-- If a question is outside engineering, politely redirect
-- If a question is unclear, ask ONE clarifying question
-- Minimum response for any calculation: show full working
+## QUALITY RULES
+- Never give vague answers — show complete working
+- Never skip steps "for brevity" — this is learning, not a race
+- If a question is unclear, ask ONE clarifying question before answering
+- If it exceeds engineering scope, say "I'm specifically built for engineering — let's stick to that superpower."
+- Give the student a "what to remember from this" one-liner at the end of each answer
 `;
+};
 
 export async function* streamChat(
   messages: Message[],
@@ -123,77 +96,43 @@ export async function* streamChat(
     summary?: string;
     struggleTopics?: string[];
     userProfile?: { email: string; totalQuestions: number };
+    topicScores?: { topic: string; score: number }[];
   }
 ): AsyncGenerator<string> {
-
-  // Only the last message gets the attachments in this implementation
-  // Using meta/llama-3.2-11b-vision-instruct as it is a widely supported vision NIM
   const processedMessages = messages.map((m, i) => {
     if (i === messages.length - 1 && m.role === 'user') {
       return { ...m, content: buildContent(m.content, m.attachments || []) };
     }
     return m;
   });
-
   const model = 'meta/llama-3.2-11b-vision-instruct';
-
   const response = await fetch('/api/chat', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model, 
-      messages: [
-        { role: 'system', content: buildSystemPrompt(memoryContext) },
-        ...processedMessages
-      ],
-      temperature: 0.1,  // lower = more precise and consistent
-      max_tokens: 4096,  // was 2048
-      stream: true,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages: [{ role: 'system', content: buildSystemPrompt(memoryContext || {}) }, ...processedMessages], temperature: 0.1, max_tokens: 4096, stream: true }),
   });
-
   if (!response.ok) {
     const errorText = await response.text();
     let errorMessage = `API error: ${response.status}`;
-    try {
-      const errorJson = JSON.parse(errorText);
-      errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
-    } catch {
-      errorMessage = errorText || errorMessage;
-    }
+    try { const e = JSON.parse(errorText); errorMessage = e.error?.message || e.message || errorMessage; } catch { errorMessage = errorText || errorMessage; }
     throw new Error(errorMessage);
   }
-
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
-
-  if (!reader) {
-    throw new Error('Response body is null');
-  }
-
+  if (!reader) throw new Error('Response body is null');
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     const chunk = decoder.decode(value);
-    const lines = chunk.split('\n');
-
-    for (const line of lines) {
+    for (const line of chunk.split('\n')) {
       if (line.startsWith('data: ')) {
         const dataStr = line.slice(6).trim();
         if (dataStr === '[DONE]') return;
-
         try {
           const data = JSON.parse(dataStr);
-          const content = data.choices[0]?.delta?.content;
-          if (content) {
-            yield content;
-          }
-        } catch (e) {
-          console.error('Error parsing chunk:', e);
-        }
+          const content = data.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch { /* skip */ }
       }
     }
   }
