@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { AuthScreen } from './components/AuthScreen';
 import { LoadingScreen } from './components/LoadingScreen';
 import { MainApp } from './components/MainApp';
@@ -29,7 +30,12 @@ const App: React.FC = () => {
   
   if (authLoading) return <LoadingScreen />;
   if (!user) return <AuthScreen />;
-  return <MainApp user={user} />;
+  return (
+    <>
+      <MainApp user={user} />
+      <Analytics />
+    </>
+  );
 };
 
 export default App;
