@@ -1,121 +1,140 @@
-import React, { useMemo, useState } from 'react';
-import katex from 'katex';
+import React, { useEffect, useRef } from 'react';
+import { Bot, User } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { motion } from 'motion/react';
-import { FileIcon, FileText, FileCode, ThumbsUp, ThumbsDown } from 'lucide-react';
+
+// Simple Markdown-like bold
+const renderBold = (text: string) => {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-semibold text-white">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+};
+
+// Inline LaTeX: $...$
+const renderLatexInline = (text: string) => {
+  const parts = text.split(/(\$[^$\n]+\$)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('$') && part.endsWith('$') && !part.includes('\n')) {
+      return <code key={i} className="bg-white/10 px-1.5 py-0.5 rounded text-cyan-300 font-mono text-sm">{part.slice(1, -1)}</code>;
+    }
+    return renderBold(part);
+  });
+};
+
+// Block LaTeX: $$...$$
+const renderMarkdown = (text: string): React.ReactNode[] => {
+  const lines = text.split('\n');
+  const result: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Block math: $$...$$
+    if (line.startsWith('$$')) {
+      let mathLines = [line.slice(2)];
+      i++;
+      while (i < lines.length && !lines[i].endsWith('$$')) {
+        mathLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length) {
+        mathLines.push(lines[i].slice(0, -2));
+        i++;
+      }
+      const mathText = mathLines.join('\n');
+      result.push(
+        <div key={i} className="my-4 p-4 bg-white/5 rounded-lg border border-white/10">
+          <code className="text-cyan-300 font-mono text-sm whitespace-pre-wrap">{mathText}</code>
+        </div>
+      );
+      continue;
+    }
+
+    // Headers
+    if (line.startsWith('###')) {
+      result.push(<h3 key={i} className="text-lg font-semibold text-white mt-4 mb-2">{renderLatexInline(line.slice(4).trim())}</h3>);
+      i++;
+      continue;
+    }
+    if (line.startsWith('##')) {
+      result.push(<h2 key={i} className="text-xl font-semibold text-white mt-4 mb-2">{renderLatexInline(line.slice(3).trim())}</h2>);
+      i++;
+      continue;
+    }
+    if (line.startsWith('#')) {
+      result.push(<h1 key={i} className="text-2xl font-bold text-white mt-4 mb-2">{renderLatexInline(line.slice(2).trim())}</h1>);
+      i++;
+      continue;
+    }
+
+    // Lists
+    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
+      const listItems: React.ReactNode[] = [];
+      while (i < lines.length && (lines[i].trim().startsWith('- ') || lines[i].trim().startsWith('* '))) {
+        listItems.push(<li key={i} className="ml-4 text-gray-300">{renderLatexInline(lines[i].trim().slice(2))}</li>);
+        i++;
+      }
+      result.push(<ul key={i} className="list-disc list-inside my-2 space-y-1">{listItems}</ul>);
+      continue;
+    }
+
+    // Numbered lists
+    const numberedMatch = line.match(/^(\d+)\.\s/);
+    if (numberedMatch) {
+      const listItems: React.ReactNode[] = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+        listItems.push(<li key={i} className="ml-4 text-gray-300">{renderLatexInline(lines[i].replace(/^\d+\.\s/, ''))}</li>);
+        i++;
+      }
+      result.push(<ol key={i} className="list-decimal list-inside my-2 space-y-1">{listItems}</ol>);
+      continue;
+    }
+
+    // Regular paragraph
+    if (line.trim()) {
+      result.push(<p key={i} className="text-gray-300 mb-2">{renderLatexInline(line)}</p>);
+    } else {
+      result.push(<br key={i} />);
+    }
+    i++;
+  }
+
+  return result;
+};
 
 interface MessageBubbleProps {
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
-  attachments?: { name: string; type: string; preview?: string }[];
-  topicTags?: string[];
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({
-  role, content, isStreaming = false, attachments = [], topicTags = []
-}) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, isStreaming = false }) => {
   const isAI = role === 'assistant';
-  const [feedbackGiven, setFeedbackGiven] = useState<'helpful' | 'unhelpful' | null>(null);
-  const [showThanks, setShowThanks] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleFeedback = async (wasHelpful: boolean) => {
-    if (feedbackGiven || !topicTags.length) return;
-    setFeedbackGiven(wasHelpful ? 'helpful' : 'unhelpful');
-    setShowThanks(true);
-    setTimeout(() => setShowThanks(false), 2000);
-  };
-
-  const getFileIcon = (type: string, name: string) => {
-    if (type === 'application/pdf') return <FileText size={12} className="text-red-400" />;
-    const ext = name.split('.').pop()?.toLowerCase();
-    if (['py', 'c', 'cpp', 'm'].includes(ext || '')) return <FileCode size={12} className="text-blue-400" />;
-    return <FileIcon size={12} className="text-gray-400" />;
-  };
-
-  const renderedContent = useMemo(() => {
-    const segments = content.split(/(\$\$[\s\S]*?\$\$|\$.*?\$)/g);
-
-    return segments.map((segment, i) => {
-      if (segment.startsWith('$$') && segment.endsWith('$$')) {
-        const math = segment.slice(2, -2);
-        try {
-          const html = katex.renderToString(math, { displayMode: true, throwOnError: false });
-          return <div key={i} className="my-3 overflow-x-auto" dangerouslySetInnerHTML={{ __html: html }} />;
-        } catch { return <span key={i}>{segment}</span>; }
-      }
-      if (segment.startsWith('$') && segment.endsWith('$') && segment.length > 2) {
-        const math = segment.slice(1, -1);
-        try {
-          const html = katex.renderToString(math, { displayMode: false, throwOnError: false });
-          return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
-        } catch { return <span key={i}>{segment}</span>; }
-      }
-
-      return (
-        <span key={i}>
-          {segment.split(/(\*\*.*?\*\*|`.*?`)/g).map((sub, j) => {
-            if (sub.startsWith('**') && sub.endsWith('**')) return <strong key={j} className="font-semibold text-white">{sub.slice(2, -2)}</strong>;
-            if (sub.startsWith('`') && sub.endsWith('`')) return <code key={j} className="px-1.5 py-0.5 rounded bg-white/10 text-cyan-300 text-xs font-mono">{sub.slice(1, -1)}</code>;
-            return sub;
-          })}
-        </span>
-      );
-    });
-  }, [content]);
+  useEffect(() => {
+    if (isStreaming && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [content, isStreaming]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={cn('flex gap-3', isAI ? '' : 'flex-row-reverse')}
-    >
-      {isAI && (
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-[#1a1a2e] border border-cyan-500/30 flex items-center justify-center">
-          <span className="text-cyan-400 text-xs font-bold">E</span>
-        </div>
-      )}
-
-      <div className={cn('max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed', isAI ? 'bg-[#1a1a2e] border border-white/10 text-gray-100' : 'bg-cyan-500/20 border border-cyan-500/30 text-white')}>
-        {attachments && attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-2">
-            {attachments.map((file, idx) => (
-              <div key={idx} className={cn('flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs', isAI ? 'bg-white/5' : 'bg-cyan-500/30')}>
-                {getFileIcon(file.type, file.name)}
-                <span>{file.name}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="whitespace-pre-wrap">{renderedContent}</div>
-
-        {isStreaming && (
-          <span className="ml-1 inline-block w-2 h-4 bg-cyan-400 animate-pulse rounded" />
-        )}
-
-        {isAI && !isStreaming && (
-          <>
-            {content.length > 100 && (
-              <p className="mt-2 text-xs text-[#64748b] border-t border-white/5 pt-2">
-                Verification: Accuracy of results should be checked against textbook standard constants.
-              </p>
-            )}
-            {!feedbackGiven && (
-              <div className="flex items-center gap-3 mt-3 pt-2 border-t border-white/5">
-                <span className="text-xs text-[#64748b]">Was this helpful?</span>
-                <button onClick={() => handleFeedback(true)} className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#64748b] hover:text-green-400 hover:bg-green-500/10 transition-colors">
-                  <ThumbsUp size={12} /> Yes
-                </button>
-                <button onClick={() => handleFeedback(false)} className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[#64748b] hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                  <ThumbsDown size={12} /> No
-                </button>
-                {showThanks && <span className="text-xs text-green-400">Thanks!</span>}
-              </div>
-            )}
-          </>
-        )}
+    <div className={cn('flex gap-3 px-4 py-3', isAI ? 'bg-white/2.5' : 'bg-transparent')}>
+      <div className={cn('flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center', isAI ? 'bg-gradient-to-br from-cyan-500 to-purple-500' : 'bg-gray-600')}>
+        {isAI ? <Bot size={16} className="text-white" /> : <User size={16} className="text-white" />}
       </div>
-    </motion.div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium mb-1">{isAI ? 'EngiAI' : 'You'}</div>
+        <div className="text-gray-300 whitespace-pre-wrap">
+          {isAI ? renderMarkdown(content) : content}
+          {isStreaming && <span className="inline-block w-2 h-4 bg-cyan-400 animate-pulse ml-1" />}
+        </div>
+        <div ref={messagesEndRef} />
+      </div>
+    </div>
   );
 };

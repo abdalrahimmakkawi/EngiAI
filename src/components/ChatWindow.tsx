@@ -71,7 +71,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ messages, isStreaming, o
             key={i} 
             role={m.role as 'user' | 'assistant'} 
             content={m.content} 
-            attachments={m.attachments}
             isStreaming={isStreaming && i === messages.length - 1 && m.role === 'assistant'}
           />
         ))}
