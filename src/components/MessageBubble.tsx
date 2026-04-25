@@ -123,7 +123,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, isS
   }, [content, isStreaming]);
 
   return (
-    <div className={cn('flex gap-3 px-4 py-3', isAI ? 'bg-white/2.5' : 'bg-transparent')}>
+    <div className={cn('flex gap-3 px-4 py-3', isAI ? 'bg-cyan-500/10' : 'bg-transparent')}>
       <div className={cn('flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center', isAI ? 'bg-gradient-to-br from-cyan-500 to-purple-500' : 'bg-gray-600')}>
         {isAI ? <Bot size={16} className="text-white" /> : <User size={16} className="text-white" />}
       </div>
