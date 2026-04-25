@@ -21,6 +21,15 @@ export const imageToBase64 = (file: File): Promise<string> => {
   });
 };
 
+const blobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
 export const extractText = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -30,13 +39,20 @@ export const extractText = (file: File): Promise<string> => {
   });
 };
 
-export const extractPdfText = async (file: File): Promise<string> => {
+interface PdfExtractResult {
+  text: string;
+  pageImages: string[]; // base64 PNGs of pages that had no text
+}
+
+export const extractPdfText = async (file: File): Promise<PdfExtractResult> => {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const MAX_PAGES = 15; // limit to first 15 pages to avoid token overflow
-    const parts: string[] = [];
+    const MAX_PAGES = 15;
+    const textParts: string[] = [];
+    const pageImages: string[] = [];
     const endPage = Math.min(pdf.numPages, MAX_PAGES);
+
     for (let i = 1; i <= endPage; i++) {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
@@ -45,17 +61,43 @@ export const extractPdfText = async (file: File): Promise<string> => {
         .join(' ')
         .replace(/\s{2,}/g, '\n')
         .trim();
+
       if (pageText.length > 0) {
-        parts.push(`--- Page ${i} ---\n${pageText}`);
+        textParts.push(`--- Page ${i} ---\n${pageText}`);
+      } else {
+        // No readable text — try to render this page as an image (scanned page)
+        try {
+          const scale = 1.5; // 1.5x resolution for decent quality
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(viewport.width);
+          canvas.height = Math.round(viewport.height);
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            const blob = await new Promise<Blob | null>(resolve =>
+              canvas.toBlob(resolve, 'image/png')
+            );
+            if (blob) {
+              const base64 = await blobToBase64(blob);
+              pageImages.push(base64);
+            }
+          }
+        } catch {
+          // Rendering this page failed — skip it silently
+        }
       }
     }
-    const fullText = parts.join('\n\n');
-    // Truncate to ~8000 chars to stay well within token limits
+
+    const fullText = textParts.join('\n\n');
     const MAX_CHARS = 8000;
-    return fullText.length > MAX_CHARS ? fullText.slice(0, MAX_CHARS) + '\n\n[... content truncated ...]' : fullText;
+    return {
+      text: fullText.length > MAX_CHARS ? fullText.slice(0, MAX_CHARS) + '\n\n[... content truncated ...]' : fullText,
+      pageImages,
+    };
   } catch (err) {
     console.error('PDF extraction failed:', err);
-    return '';
+    return { text: '', pageImages: [] };
   }
 };
 
@@ -79,13 +121,20 @@ export const processFile = async (file: File): Promise<Attachment | null> => {
     return { ...base, base64: await imageToBase64(file), preview: URL.createObjectURL(file) };
   }
   if (file.type === 'application/pdf') {
-    const text = await extractPdfText(file);
-    if (!text.trim()) {
-      return { ...base, textContent: '[PDF text extraction failed — the file may be scanned or image-based]' };
+    const { text, pageImages } = await extractPdfText(file);
+    if (text.trim()) {
+      // Normal PDF with extractable text
+      return { ...base, textContent: text };
+    } else if (pageImages.length > 0) {
+      // Scanned/image-based PDF — attach first page as image for vision model
+      // Include a note if there are additional pages beyond the first
+      return { ...base, base64: pageImages[0], textContent: `[Scanned PDF — ${pageImages.length} page(s) rendered as images for analysis]\n${pageImages.length > 1 ? `Note: ${pageImages.length - 1} additional page(s) could not be included due to size limits.` : ''}` };
+    } else {
+      // Completely unreadable
+      return { ...base, textContent: '[PDF text extraction failed — the file may be corrupted or password-protected]' };
     }
-    return { ...base, textContent: text };
   }
-  // Truncate text files as well
+  // Text files — truncate if needed
   const text = await extractText(file);
   const MAX_CHARS = 8000;
   const truncated = text.length > MAX_CHARS ? text.slice(0, MAX_CHARS) + '\n\n[... content truncated ...]' : text;
