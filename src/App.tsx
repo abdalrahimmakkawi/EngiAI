@@ -8,8 +8,12 @@ export default function App() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   return (
     <div className="relative min-h-screen">
-      <ThreeBackground />
-      {user ? <MainApp user={user} /> : <LoginScreen onLogin={setUser} />}
+      <div className="fixed inset-0 z-0">
+        <ThreeBackground />
+      </div>
+      <div className="relative z-10">
+        {user ? <MainApp user={user} /> : <LoginScreen onLogin={setUser} />}
+      </div>
     </div>
   );
 }
@@ -45,17 +49,17 @@ function LoginScreen({ onLogin }: { onLogin: (u: SupabaseUser) => void }) {
           <p className="text-gray-400">Your AI engineering co-pilot</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="rounded-2xl p-8 space-y-5" style={{ background: 'rgba(17,17,35,0.95)', border: '1px solid rgba(255,255,255,0.12)' }}>
+        <form onSubmit={handleSubmit} className="rounded-2xl p-8 space-y-5" style={{ background: '#12121f', border: '1px solid rgba(255,255,255,0.15)' }}>
           <div>
             <label className="block text-xs text-gray-400 mb-2 uppercase tracking-wider font-medium">Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required
-              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'white' }}
+              style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.2)', color: '#e2e8f0' }}
               className="w-full px-4 py-3 rounded-xl text-sm placeholder-gray-500 focus:outline-none focus:border-cyan-400/70 focus:ring-1 focus:ring-cyan-400/30 transition-all" />
           </div>
           <div>
             <label className="block text-xs text-gray-400 mb-2 uppercase tracking-wider font-medium">Password</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required
-              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', color: 'white' }}
+              style={{ background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.2)', color: '#e2e8f0' }}
               className="w-full px-4 py-3 rounded-xl text-sm placeholder-gray-500 focus:outline-none focus:border-cyan-400/70 focus:ring-1 focus:ring-cyan-400/30 transition-all" />
           </div>
           <button type="submit" disabled={loading}
