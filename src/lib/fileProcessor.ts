@@ -67,7 +67,7 @@ export const extractPdfText = async (file: File): Promise<PdfExtractResult> => {
       } else {
         // No readable text — try to render this page as an image (scanned page)
         try {
-          const scale = 1.5; // 1.5x resolution for decent quality
+          const scale = 2.5; // 2.5x resolution for clearer vision model output
           const viewport = page.getViewport({ scale });
           const canvas = document.createElement('canvas');
           canvas.width = Math.round(viewport.width);
