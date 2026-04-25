@@ -31,19 +31,32 @@ export const extractText = (file: File): Promise<string> => {
 };
 
 export const extractPdfText = async (file: File): Promise<string> => {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const parts: string[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item: any) => item.str)
-      .join(' ')
-      .replace(/\s{2,}/g, '\n');
-    parts.push(`--- Page ${i} ---\n${pageText}`);
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const MAX_PAGES = 15; // limit to first 15 pages to avoid token overflow
+    const parts: string[] = [];
+    const endPage = Math.min(pdf.numPages, MAX_PAGES);
+    for (let i = 1; i <= endPage; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item: any) => item.str)
+        .join(' ')
+        .replace(/\s{2,}/g, '\n')
+        .trim();
+      if (pageText.length > 0) {
+        parts.push(`--- Page ${i} ---\n${pageText}`);
+      }
+    }
+    const fullText = parts.join('\n\n');
+    // Truncate to ~8000 chars to stay well within token limits
+    const MAX_CHARS = 8000;
+    return fullText.length > MAX_CHARS ? fullText.slice(0, MAX_CHARS) + '\n\n[... content truncated ...]' : fullText;
+  } catch (err) {
+    console.error('PDF extraction failed:', err);
+    return '';
   }
-  return parts.join('\n');
 };
 
 export const validateFile = (file: File): { valid: boolean; error?: string } => {
@@ -66,9 +79,17 @@ export const processFile = async (file: File): Promise<Attachment | null> => {
     return { ...base, base64: await imageToBase64(file), preview: URL.createObjectURL(file) };
   }
   if (file.type === 'application/pdf') {
-    return { ...base, textContent: await extractPdfText(file) };
+    const text = await extractPdfText(file);
+    if (!text.trim()) {
+      return { ...base, textContent: '[PDF text extraction failed — the file may be scanned or image-based]' };
+    }
+    return { ...base, textContent: text };
   }
-  return { ...base, textContent: await extractText(file) };
+  // Truncate text files as well
+  const text = await extractText(file);
+  const MAX_CHARS = 8000;
+  const truncated = text.length > MAX_CHARS ? text.slice(0, MAX_CHARS) + '\n\n[... content truncated ...]' : text;
+  return { ...base, textContent: truncated };
 };
 
 export const revokePreview = (att: Attachment) => {
